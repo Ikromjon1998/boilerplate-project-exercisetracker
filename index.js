@@ -5,13 +5,11 @@ const mongoose = require('mongoose')
 const shortid = require('shortid')
 require('dotenv').config()
 
-console.log(process.env.DB_URI);
-
 connectToDatabase();
 
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true },
-  _id: { type: String, default: shortid.generate }, 
+  _id: { type: String, default: shortid.generate },
   logs: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' }]
 });
 
@@ -68,7 +66,7 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
       username: user.username,
       description: exercise.description,
       duration: exercise.duration,
-      date: exercise.date ? exercise.date.toDateString() : null // check if date is set
+      date: exercise.date ? exercise.date.toDateString() : (new Date()).toDateString() // check if date is set
     });
   } catch (error) {
     res.json({ error: error.message });
@@ -76,29 +74,41 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 });
 
 app.get('/api/users/:_id/logs', async (req, res) => {
-  const { from, to, limit } = req.query;
   const { _id } = req.params;
+  const { from, to, limit } = req.query;
+
   try {
-    const user = await User.findById(_id).populate('logs');
+    const user = await User.findById(_id).populate({
+      path: 'logs',
+      match: {
+        ...(from && { date: { $gte: new Date(from) } }),
+        ...(to && { date: { $lte: new Date(to) } }),
+      },
+      options: {
+        ...(limit && { limit: parseInt(limit) }),
+      },
+    });
+
     if (!user) throw new Error("User not found");
-    let log = user.logs.map(exercise => ({
+
+    const log = user.logs.map((exercise) => ({
       description: exercise.description,
       duration: exercise.duration,
-      date: exercise.date ? exercise.date.toDateString() : null // check if date is set
+      date: exercise.date ? exercise.date.toDateString() :
+        (new Date()).toDateString()// check if date is set
     }));
-    if (from) log = log.filter(exercise => exercise.date >= new Date(from));
-    if (to) log = log.filter(exercise => exercise.date <= new Date(to));
-    if (limit) log = log.slice(0, limit);
+
     res.json({
       _id: user._id,
       username: user.username,
       count: user.logs.length,
-      log
+      log: log,
     });
   } catch (error) {
     res.json({ error: error.message });
   }
 });
+
 
 
 const listener = app.listen(process.env.PORT || 3000, () => {
